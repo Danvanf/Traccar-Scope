@@ -19,6 +19,7 @@ function AppLayout({
   devices,
   trips,
   tripEditor,
+  historyPanelPosition,
   hasNotifications = false,
   onNotificationsClick,
   status,
@@ -40,6 +41,15 @@ function AppLayout({
   const tripEditorButtonRef = useRef(null)
   const cancelLocationRef = useRef(null)
   const visibleSheetSize = mapPicking ? 'peek' : sheetSize
+  const historyPanelLeft = historyPanelPosition?.left ?? 8
+  const historyPanelTop = historyPanelPosition?.top ?? 150
+  const historyPanelWidth = Math.min(360, window.innerWidth - 16)
+  const historyPanelOnRight = historyPanelLeft + historyPanelWidth / 2 > window.innerWidth / 2
+  const editorButtonLeft = Math.max(8, Math.min(
+    historyPanelOnRight ? historyPanelLeft - 50 : historyPanelLeft + historyPanelWidth + 6,
+    window.innerWidth - 52,
+  ))
+  const editorButtonTop = Math.max(8, Math.min(historyPanelTop, window.innerHeight - 52))
 
   useEffect(() => {
     if (mapPicking && isCompact) cancelLocationRef.current?.focus()
@@ -147,10 +157,28 @@ function AppLayout({
           {isCompact && hasNotifications && !mapPicking && <button type="button" className="scope-map-notifications" onClick={onNotificationsClick} aria-label="Open notifications" title="Notifications">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
           </button>}
-          {isCompact && tripEditor && !mapPicking && <button ref={tripEditorButtonRef} type="button" className="scope-map-edit-trip" onClick={() => setTripEditorOpen(true)} aria-label="Edit selected trip" title="Edit selected trip">
+          {isCompact && tripEditor && !mapPicking && <button
+            ref={tripEditorButtonRef}
+            type="button"
+            className="scope-map-edit-trip"
+            onClick={() => setTripEditorOpen(true)}
+            aria-label="Edit selected trip"
+            title="Edit selected trip"
+          >
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>
           </button>}
         </div>
+        {!isCompact && tripEditor && <button
+          ref={tripEditorButtonRef}
+          type="button"
+          className="scope-map-edit-trip-desktop"
+          style={{ left: `${editorButtonLeft}px`, top: `${editorButtonTop}px` }}
+          onClick={() => setTripEditorOpen(true)}
+          aria-label="Edit selected trip"
+          title="Edit selected trip"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>
+        </button>}
         {isCompact && <BottomSheet panel={activePanel} size={sheetSize} title={selectedTitle} summary={selectedSummary} onSizeChange={changeSheetSize} onMap={returnToMap}>
           {({ tripsActionsTarget }) => <>
           {activePanel === 'devices' && devices && devices({ onDeviceSelected: () => {
@@ -165,7 +193,7 @@ function AppLayout({
           </>}
         </BottomSheet>}
       </div>
-      {isCompact && tripEditorOpen && tripEditor && <div className="scope-trip-editor-backdrop">
+      {tripEditorOpen && tripEditor && <div className="scope-trip-editor-backdrop">
         <section className="scope-trip-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="scope-trip-editor-title">
           <header><h2 id="scope-trip-editor-title">Edit trip</h2><button type="button" className="small secondary" onClick={() => { setTripEditorOpen(false); tripEditorButtonRef.current?.focus() }}>Close</button></header>
           {tripEditor}

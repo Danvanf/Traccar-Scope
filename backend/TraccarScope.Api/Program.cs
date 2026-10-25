@@ -301,6 +301,7 @@ app.MapTripEventThresholdEndpoints();
 app.MapVehicleStatsEndpoints();
 app.MapReportEndpoints();
 app.MapPlaceReportEndpoints();
+app.MapNamedPlaceMileageReportEndpoints();
 app.MapCompletenessReportEndpoints();
 app.MapEventReportEndpoints();
 app.MapUtilizationReportEndpoints();

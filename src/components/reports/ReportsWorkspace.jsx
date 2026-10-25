@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useState } from 'react'
-import { fetchBusinessMileageReport, fetchDataCompletenessReport, fetchDeviceBindingHistory, fetchEventReport, fetchMonthlySummaryReport, fetchNamedPlaces, fetchPlaceReport, fetchSpeedBandReport, fetchTripLogReport, fetchTripTags, fetchUsageSummaryReport, fetchUtilizationReport, fetchVehicleCatalog, fetchVehicleSpeedBands } from '../../lib/traccarScopeApi'
+import { fetchBusinessMileageReport, fetchDataCompletenessReport, fetchDeviceBindingHistory, fetchEventReport, fetchMonthlySummaryReport, fetchNamedPlaceMileageReport, fetchNamedPlaces, fetchPlaceReport, fetchSpeedBandReport, fetchTripLogReport, fetchTripTags, fetchUsageSummaryReport, fetchUtilizationReport, fetchVehicleCatalog, fetchVehicleSpeedBands } from '../../lib/traccarScopeApi'
 import { DEFAULT_SPEED_BANDS } from '../../lib/speedBands'
 import { resolveProfileContext, translateAttribute } from '../../lib/carProfiles'
 import { resolveProfileRevision } from '../../lib/profileHistory'
@@ -12,6 +12,28 @@ import { addNamedPlaceMarkers } from '../../lib/trackPlaces'
 function distance(meters, units) { return units === 'metric' ? `${(Number(meters || 0) / 1000).toFixed(1)} km` : `${(Number(meters || 0) / 1609.344).toFixed(1)} mi` }
 function speed(mph, units) { if (mph == null) return '—'; return units === 'metric' ? `${(Number(mph) * 1.609344).toFixed(1)} km/h` : `${Number(mph).toFixed(1)} mph` }
 function minutes(seconds) { return `${Math.round(Number(seconds || 0) / 60)} min` }
+function odometer(meters, units) {
+  if (meters == null || !Number.isFinite(Number(meters))) return '—'
+  return units === 'metric' ? `${(Number(meters) / 1000).toFixed(1)} km` : `${(Number(meters) / 1609.344).toFixed(1)} mi`
+}
+const REPORT_TITLES = {
+  'usage-summary': 'Usage Summary',
+  'trip-log': 'Trip Log',
+  'monthly-summary': 'Monthly Summary',
+  places: 'Named Places',
+  'named-place-mileage': 'Mileage by Named Place',
+  'data-completeness': 'Data Completeness',
+  events: 'Driving Events',
+  utilization: 'Utilization Calendar',
+  'business-mileage': 'Business Mileage',
+  'speed-bands': 'Speed Bands',
+  racer: 'Racer Report',
+  'vehicle-health': 'Vehicle Health',
+  'tracker-health': 'Tracker Health',
+}
+function escapeHtml(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}
 function period(value, groupBy) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value || '—')
@@ -65,6 +87,7 @@ function ReportTable({ reportType, rows, units, groupBy }) {
           : reportType === 'events' ? ['Vehicle', 'Event', 'Source', 'Count', 'First', 'Last', 'Minimum', 'Maximum', 'Unit', 'High severity']
             : reportType === 'utilization' ? ['Period', 'Vehicle', 'Trips', 'First departure', 'Last arrival', 'Distance', 'Driving time']
               : reportType === 'business-mileage' ? ['Date', 'Vehicle', 'From', 'To', 'Distance', 'Duration', 'Tags', 'Purpose']
+                : reportType === 'named-place-mileage' ? ['Date and time', 'Vehicle', 'From', 'To', 'Distance', 'Duration', 'Start odometer', 'End odometer']
       : ['Period', 'Vehicle', reportType === 'trip-log' ? 'From' : 'Trips', ...(reportType === 'trip-log' ? ['To'] : []), 'Distance', 'Duration', 'Max speed', 'Events']
   const cells = (row) => {
     if (health) return [row.vehicleName, row.profileName, row.samples, metricCell(row.coolantMax), metricCell(row.obdSpeedMax), metricCell(row.voltageMin), metricCell(row.rpmMax), metricCell(row.mafMax), metricCell(row.throttleMax), metricCell(row.dtcMax)]
@@ -80,6 +103,7 @@ function ReportTable({ reportType, rows, units, groupBy }) {
     if (reportType === 'events') return [row.vehicleName, row.eventType, row.source, row.eventCount, period(row.firstOccurrence, 'trip'), period(row.lastOccurrence, 'trip'), row.minimum ?? '—', row.maximum ?? '—', row.unit || '—', row.highSeverity]
     if (reportType === 'utilization') return [period(row.period, groupBy), row.vehicleName, row.tripCount, period(row.firstDeparture, 'trip'), period(row.lastArrival, 'trip'), distance(row.distanceMeters, units), minutes(row.durationSeconds)]
     if (reportType === 'business-mileage') return [period(row.startedAt, 'trip'), row.vehicleName, row.startAddress || '—', row.endAddress || '—', distance(row.distanceMeters, units), minutes(row.durationSeconds), row.tags || '—', row.notes || '—']
+    if (reportType === 'named-place-mileage') return [tripPeriod(row.startedAt, row.endedAt), row.vehicleName, row.startPlaceName || '—', row.endPlaceName || '—', distance(row.distanceMeters, units), minutes(row.durationSeconds), odometer(row.startOdometerMeters, units), odometer(row.endOdometerMeters, units)]
     const common = [reportType === 'trip-log' ? tripPeriod(row.period, row.endedAt) : period(row.period, reportType === 'monthly-summary' ? 'month' : groupBy), row.vehicleName]
     if (reportType === 'trip-log') common.push(<LocationCell address={row.startAddress} latitude={row.startLatitude} longitude={row.startLongitude} />, <LocationCell address={row.endAddress} latitude={row.endLatitude} longitude={row.endLongitude} />)
     else common.push(row.tripCount)
@@ -389,6 +413,8 @@ export default function ReportsWorkspace({ baseUrl, initialVehicleId, traccarApi
   const [reportBindings, setReportBindings] = useState(bindings)
   const [bindingHistoryStatus, setBindingHistoryStatus] = useState('loading')
   const [tags, setTags] = useState([])
+  const [namedPlaces, setNamedPlaces] = useState([])
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState([])
   const [report, setReport] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -407,6 +433,12 @@ export default function ReportsWorkspace({ baseUrl, initialVehicleId, traccarApi
   useEffect(() => {
     let active = true
     fetchVehicleCatalog(baseUrl).then((values) => { if (active) setVehicles(values) }).catch(() => { if (active) setVehicles([]) })
+    return () => { active = false }
+  }, [baseUrl])
+
+  useEffect(() => {
+    let active = true
+    fetchNamedPlaces(baseUrl).then((values) => { if (active) setNamedPlaces(values) }).catch(() => { if (active) setNamedPlaces([]) })
     return () => { active = false }
   }, [baseUrl])
 
@@ -432,6 +464,56 @@ export default function ReportsWorkspace({ baseUrl, initialVehicleId, traccarApi
     if (through < from) { setError('The through date must be on or after the from date.'); return }
     setBusy(true); setError(''); setReport(null)
     try {
+      if (reportType === 'named-place-mileage') {
+        if (!selectedPlaceIds.length) { setError('Select at least one named place.'); return }
+        let nextReport = await fetchNamedPlaceMileageReport(baseUrl, { from, to: through, vehicleId: vehicleId || undefined, tagId: tagId || undefined, placeIds: selectedPlaceIds, units })
+        const warnings = [...(nextReport.warnings || [])]
+        if (traccarApi && nextReport.rows?.length) {
+          const endpointIds = [...new Set(nextReport.rows.flatMap((row) => [row.startTraccarPositionId, row.endTraccarPositionId]).filter((id) => id != null).map(String))]
+          const positionById = new Map()
+          let lookupFailed = false
+          for (let index = 0; index < endpointIds.length; index += 100) {
+            const params = new URLSearchParams()
+            endpointIds.slice(index, index + 100).forEach((id) => params.append('id', id))
+            try {
+              const positions = await traccarApi(`/positions?${params}`, { cache: 'no-store' })
+              for (const position of Array.isArray(positions) ? positions : []) positionById.set(String(position.id), position)
+            } catch { lookupFailed = true }
+          }
+          const readOdometerMeters = (position) => {
+            if (!position) return null
+            for (const key of ['odometer', 'obdOdometer']) {
+              const value = Number(position.attributes?.[key])
+              if (Number.isFinite(value) && value >= 0) return value
+            }
+            return null
+          }
+          const rows = nextReport.rows.map((row) => ({
+            ...row,
+            startOdometerMeters: readOdometerMeters(positionById.get(String(row.startTraccarPositionId))),
+            endOdometerMeters: readOdometerMeters(positionById.get(String(row.endTraccarPositionId))),
+          }))
+          const byVehicle = new Map()
+          for (const row of rows) {
+            const entries = byVehicle.get(String(row.vehicleId)) || { vehicleId: row.vehicleId, vehicleName: row.vehicleName, readings: [] }
+            if (row.startOdometerMeters != null) entries.readings.push({ at: new Date(row.startedAt).getTime(), value: row.startOdometerMeters })
+            if (row.endOdometerMeters != null) entries.readings.push({ at: new Date(row.endedAt || row.startedAt).getTime(), value: row.endOdometerMeters })
+            byVehicle.set(String(row.vehicleId), entries)
+          }
+          const odometerByVehicle = [...byVehicle.values()].map(({ readings, ...vehicle }) => {
+            readings.sort((a, b) => a.at - b.at)
+            return { ...vehicle, startOdometerMeters: readings[0]?.value ?? null, endOdometerMeters: readings.at(-1)?.value ?? null }
+          }).filter((vehicle) => vehicle.startOdometerMeters != null || vehicle.endOdometerMeters != null)
+          if (lookupFailed) warnings.push('Some Traccar position odometer readings could not be loaded; unavailable values are shown as em dashes.')
+          if (odometerByVehicle.length === 0) warnings.push('Traccar did not provide odometer readings for the matched trip endpoints.')
+          nextReport = { ...nextReport, rows, warnings, summary: { ...nextReport.summary, odometerByVehicle } }
+        } else {
+          warnings.push('Odometer readings are unavailable because Traccar position lookup is not configured.')
+          nextReport = { ...nextReport, warnings }
+        }
+        setReport(nextReport)
+        return
+      }
       if (reportType === 'racer') {
         const nextReport = await loadRacerReport({ baseUrl, traccarApi, from, through, vehicleId, tagId, vehicles, bindings: reportBindings, profileMap, profileAssignments, sourceMappingRevisionsByDevice, profileDefinitionHistoryById })
         setReport(nextReport)
@@ -497,6 +579,16 @@ export default function ReportsWorkspace({ baseUrl, initialVehicleId, traccarApi
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${reportType}-${from}-${through}.csv`; link.click(); URL.revokeObjectURL(url)
         return
       }
+      if (report && reportType === 'named-place-mileage') {
+        const headers = ['Trip ID', 'Date and time', 'Vehicle', 'From', 'To', `Distance (${units === 'metric' ? 'km' : 'mi'})`, 'Duration (min)', `Start odometer (${units === 'metric' ? 'km' : 'mi'})`, `End odometer (${units === 'metric' ? 'km' : 'mi'})`]
+        const convert = (value) => value == null ? '' : units === 'metric' ? (Number(value) / 1000).toFixed(1) : (Number(value) / 1609.344).toFixed(1)
+        const values = report.rows.map((row) => [row.tripId, tripPeriod(row.startedAt, row.endedAt), row.vehicleName, row.startPlaceName || '', row.endPlaceName || '', units === 'metric' ? (row.distanceMeters / 1000).toFixed(3) : (row.distanceMeters / 1609.344).toFixed(3), (row.durationSeconds / 60).toFixed(1), convert(row.startOdometerMeters), convert(row.endOdometerMeters)])
+        const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
+        const overallRows = report.summary.odometerByVehicle?.length ? [[], ['Overall odometer by vehicle'], ['Vehicle', `Starting odometer (${units === 'metric' ? 'km' : 'mi'})`, `Ending odometer (${units === 'metric' ? 'km' : 'mi'})`], ...report.summary.odometerByVehicle.map((item) => [item.vehicleName, convert(item.startOdometerMeters), convert(item.endOdometerMeters)])] : []
+        const csv = [...[headers, ...values], ...overallRows].map((line) => line.map(escape).join(',')).join('\n')
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `named-place-mileage-${from}-${through}.csv`; link.click(); URL.revokeObjectURL(url)
+        return
+      }
       const fetchReport = reportType === 'trip-log' ? fetchTripLogReport : reportType === 'monthly-summary' ? fetchMonthlySummaryReport : reportType === 'places' ? fetchPlaceReport : reportType === 'data-completeness' ? fetchDataCompletenessReport : reportType === 'events' ? fetchEventReport : reportType === 'utilization' ? fetchUtilizationReport : reportType === 'business-mileage' ? fetchBusinessMileageReport : fetchUsageSummaryReport
       const effectiveGroupBy = reportType === 'monthly-summary' ? 'month' : groupBy
       const blob = await fetchReport(baseUrl, { from, to: through, groupBy: effectiveGroupBy, timeZone, units, vehicleId: vehicleId || undefined, tagId: tagId || undefined, format: 'csv' })
@@ -514,34 +606,57 @@ export default function ReportsWorkspace({ baseUrl, initialVehicleId, traccarApi
     if (!report?.rows?.length) return
     const table = document.querySelector('.report-workspace-table-wrap table')
     if (!table) { setError('The report table is not available for PDF export.'); return }
+    const odometerSummary = document.querySelector('.report-odometer-summary')?.outerHTML || ''
     const printWindow = window.open('', '_blank', 'width=1100,height=800')
     if (!printWindow) { setError('The PDF print window was blocked. Allow popups for this site and try again.'); return }
-    printWindow.document.write(`<!doctype html><html><head><title>${reportType} ${from} to ${through}</title><style>body{font-family:Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px}p{color:#444}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #bbb;padding:6px;text-align:left}th{background:#eee}</style></head><body><h1>${reportType.replaceAll('-', ' ')}</h1><p>${from} through ${through}</p>${table.outerHTML}</body></html>`)
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(reportTitle)}</title><style>body{font-family:Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px}p{color:#444}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #bbb;padding:6px;text-align:left}th{background:#eee}.report-odometer-summary{margin:12px 0;padding:8px;border:1px solid #bbb}.report-odometer-summary span{display:inline-block;margin-right:20px}</style></head><body><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(criteriaText)}</p>${odometerSummary}${table.outerHTML}</body></html>`)
     printWindow.document.close()
     printWindow.focus()
     printWindow.onload = () => { printWindow.print() }
   }
 
   const showsGroupBy = ['usage-summary', 'monthly-summary', 'utilization'].includes(reportType)
-  const showsUnits = ['usage-summary', 'trip-log', 'monthly-summary', 'utilization', 'business-mileage', 'speed-bands', 'racer'].includes(reportType)
+  const showsUnits = ['usage-summary', 'trip-log', 'monthly-summary', 'utilization', 'business-mileage', 'named-place-mileage', 'speed-bands', 'racer'].includes(reportType)
+  const authorizedVehicleIds = new Set(vehicles.map((vehicle) => String(vehicle.id)))
+  const reportPlaces = namedPlaces.filter((place) => (!place.vehicleId || authorizedVehicleIds.has(String(place.vehicleId))) && (!vehicleId || !place.vehicleId || String(place.vehicleId) === String(vehicleId)))
+  const criteriaDate = (value) => {
+    const date = new Date(`${value}T00:00:00`)
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { dateStyle: 'medium' })
+  }
+  const criteriaItems = [
+    `Range: ${criteriaDate(from)} – ${criteriaDate(through)}`,
+    `Vehicle: ${vehicleId ? (vehicles.find((item) => String(item.id) === String(vehicleId))?.displayName || vehicles.find((item) => String(item.id) === String(vehicleId))?.name || `Vehicle ${vehicleId}`) : 'All authorized vehicles'}`,
+    `Tags: ${tagId ? (tags.find((item) => String(item.id) === String(tagId))?.name || `Tag ${tagId}`) : 'all'}`,
+  ]
+  const selectedPlaceNames = selectedPlaceIds.map((id) => reportPlaces.find((place) => String(place.id) === String(id))?.name || 'Unavailable place')
+  if (reportType === 'named-place-mileage') criteriaItems.push(`Named places: ${selectedPlaceNames.length ? selectedPlaceNames.join(', ') : 'none selected'}`)
+  const criteriaText = criteriaItems.join(' · ')
+  const reportTitle = REPORT_TITLES[reportType] || reportType.split('-').map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`).join(' ')
+  const togglePlace = (placeId) => {
+    setSelectedPlaceIds((current) => current.includes(placeId) ? current.filter((id) => id !== placeId) : [...current, placeId])
+    setReport(null)
+  }
 
   const workspace = <div className="modal-backdrop report-workspace-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="report-workspace" role="dialog" aria-modal="true" aria-label="Reports">
       <div className="modal-header"><div><h2>Reports</h2><small>Usage summary across authorized vehicles and trips</small></div><button type="button" className="small secondary" onClick={onClose}>Close</button></div>
       <div className="report-workspace-filters">
-        <label>Report<select value={reportType} onChange={(event) => selectReportType(event.target.value)}><option value="usage-summary">Usage Summary</option><option value="trip-log">Trip Log</option><option value="monthly-summary">Monthly Summary</option><option value="places">Named Places</option><option value="data-completeness">Data Completeness</option><option value="events">Driving Events</option><option value="utilization">Utilization Calendar</option><option value="business-mileage">Business Mileage</option><option value="speed-bands">Speed Bands</option><option value="racer">Racer Report</option><option value="vehicle-health">Vehicle Health</option><option value="tracker-health">Tracker Health</option></select></label>
-        <label>Vehicle<select value={vehicleId} onChange={(event) => { setVehicleId(event.target.value); setTagId(''); setReport(null) }}><option value="">All authorized vehicles</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.displayName || vehicle.name || 'Unnamed vehicle'}</option>)}</select></label>
+        <label>Report<select value={reportType} onChange={(event) => selectReportType(event.target.value)}><option value="usage-summary">Usage Summary</option><option value="trip-log">Trip Log</option><option value="monthly-summary">Monthly Summary</option><option value="places">Named Places</option><option value="named-place-mileage">Mileage by Named Place</option><option value="data-completeness">Data Completeness</option><option value="events">Driving Events</option><option value="utilization">Utilization Calendar</option><option value="business-mileage">Business Mileage</option><option value="speed-bands">Speed Bands</option><option value="racer">Racer Report</option><option value="vehicle-health">Vehicle Health</option><option value="tracker-health">Tracker Health</option></select></label>
+        <label>Vehicle<select value={vehicleId} onChange={(event) => { setVehicleId(event.target.value); setTagId(''); setSelectedPlaceIds([]); setReport(null) }}><option value="">All authorized vehicles</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.displayName || vehicle.name || 'Unnamed vehicle'}</option>)}</select></label>
         <label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>Through<input type="date" value={through} onChange={(event) => setThrough(event.target.value)} /></label>
         {showsGroupBy && <label>Group by<select value={reportType === 'monthly-summary' ? 'month' : groupBy} onChange={(event) => setGroupBy(event.target.value)}><option value="trip">Trip</option><option value="day">Day</option><option value="week">Week</option><option value="month">Month</option><option value="year">Year</option></select></label>}
          {showsUnits && <label>Units<select value={units} onChange={(event) => { updateSetting?.('displayUnits', event.target.value); setReport(null) }}><option value="imperial">Imperial</option><option value="metric">Metric</option></select></label>}
         <label>Tag<select value={tagId} onChange={(event) => setTagId(event.target.value)}><option value="">All tags</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label>
-         <button type="button" onClick={run} disabled={busy || (['vehicle-health', 'tracker-health', 'racer'].includes(reportType) && bindingHistoryStatus === 'loading')}>{busy ? 'Running…' : ['vehicle-health', 'tracker-health', 'racer'].includes(reportType) && bindingHistoryStatus === 'loading' ? 'Loading bindings…' : 'Run report'}</button>
+        {reportType === 'named-place-mileage' && <fieldset className="report-place-selector"><legend>Named places to include</legend>{reportPlaces.length ? <div className="report-place-options">{reportPlaces.map((place) => <label key={place.id}><input type="checkbox" checked={selectedPlaceIds.includes(place.id)} onChange={() => togglePlace(place.id)} />{place.name}{place.vehicleId ? ` (${vehicles.find((vehicle) => String(vehicle.id) === String(place.vehicleId))?.displayName || 'vehicle'})` : ' (shared)'}</label>)}</div> : <small>No named places are available for this vehicle.</small>}</fieldset>}
+         <button type="button" onClick={run} disabled={busy || (reportType === 'named-place-mileage' && selectedPlaceIds.length === 0) || (['vehicle-health', 'tracker-health', 'racer'].includes(reportType) && bindingHistoryStatus === 'loading')}>{busy ? 'Running…' : ['vehicle-health', 'tracker-health', 'racer'].includes(reportType) && bindingHistoryStatus === 'loading' ? 'Loading bindings…' : 'Run report'}</button>
       </div>
       {error && <div className="report-workspace-message" role="alert">{error}</div>}
       {report && <>
+        <div className="report-result-heading"><h3>{reportTitle}</h3><p>{criteriaItems.map((item) => <span key={item}>{item}</span>)}</p></div>
         {report.warnings?.map((warning) => <div key={warning} className="report-workspace-message" role="status">{warning}</div>)}
-        {reportType === 'racer' ? <div className="report-summary-cards"><div><strong>{report.summary.courses}</strong><span>Courses</span></div><div><strong>{report.summary.lapCount}</strong><span>Laps</span></div><div><strong>{report.summary.bestLapSeconds == null ? '—' : `${report.summary.bestLapSeconds.toFixed(3)} s`}</strong><span>Best lap</span></div><div><strong>{report.summary.averageLapSeconds == null ? '—' : `${report.summary.averageLapSeconds.toFixed(3)} s`}</strong><span>Average lap</span></div><div><strong>{report.summary.dragRunCount}</strong><span>Drag runs</span></div><div><strong>{report.summary.bestDragSeconds == null ? '—' : `${report.summary.bestDragSeconds.toFixed(3)} s`}</strong><span>Best drag run</span></div><div><strong>{report.summary.splitCount}</strong><span>Split passages</span></div></div> : reportType === 'places' ? <div className="report-summary-cards"><div><strong>{report.summary.placeCount}</strong><span>Places</span></div><div><strong>{report.summary.visitCount}</strong><span>Visits</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Trip distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Trip time</span></div></div> : reportType === 'data-completeness' ? <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{report.summary.tripsWithoutMaxSpeed}</strong><span>Without max speed</span></div><div><strong>{report.summary.tripsWithoutRoute}</strong><span>Without route</span></div><div><strong>{report.summary.tripsWithoutTelemetry}</strong><span>Without telemetry</span></div><div><strong>{report.summary.sourceCount}</strong><span>Sources</span></div></div> : reportType === 'events' ? <div className="report-summary-cards"><div><strong>{report.summary.eventCount}</strong><span>Events</span></div><div><strong>{report.summary.eventTypes}</strong><span>Event types</span></div><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div></div> : reportType === 'utilization' ? <div className="report-summary-cards"><div><strong>{report.summary.activeDays}</strong><span>Active days</span></div><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Driving time</span></div></div> : reportType === 'speed-bands' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.routeVehicles}</strong><span>With routes</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Covered distance</span></div></div> : reportType === 'tracker-health' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.samples}</strong><span>Telemetry samples</span></div></div> : reportType === 'vehicle-health' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.samples}</strong><span>Telemetry samples</span></div></div> : reportType === 'business-mileage' ? <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Mileage</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Driving time</span></div><div><strong>{report.summary.uncategorizedCount}</strong><span>Uncategorized</span></div></div> : <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Duration</span></div><div><strong>{report.summary.averageTripDistanceMeters == null ? '—' : distance(report.summary.averageTripDistanceMeters, units)}</strong><span>Average trip</span></div><div><strong>{report.summary.averageTripDurationSeconds == null ? '—' : minutes(report.summary.averageTripDurationSeconds)}</strong><span>Average duration</span></div><div><strong>{report.summary.eventCount}</strong><span>Events</span></div><div><strong>{speed(report.summary.maxSpeedMph, units)}</strong><span>Max speed</span></div></div>}
+        {reportType === 'named-place-mileage' ? <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Matched trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Mileage</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Driving time</span></div></div> : reportType === 'racer' ? <div className="report-summary-cards"><div><strong>{report.summary.courses}</strong><span>Courses</span></div><div><strong>{report.summary.lapCount}</strong><span>Laps</span></div><div><strong>{report.summary.bestLapSeconds == null ? '—' : `${report.summary.bestLapSeconds.toFixed(3)} s`}</strong><span>Best lap</span></div><div><strong>{report.summary.averageLapSeconds == null ? '—' : `${report.summary.averageLapSeconds.toFixed(3)} s`}</strong><span>Average lap</span></div><div><strong>{report.summary.dragRunCount}</strong><span>Drag runs</span></div><div><strong>{report.summary.bestDragSeconds == null ? '—' : `${report.summary.bestDragSeconds.toFixed(3)} s`}</strong><span>Best drag run</span></div><div><strong>{report.summary.splitCount}</strong><span>Split passages</span></div></div> : reportType === 'places' ? <div className="report-summary-cards"><div><strong>{report.summary.placeCount}</strong><span>Places</span></div><div><strong>{report.summary.visitCount}</strong><span>Visits</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Trip distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Trip time</span></div></div> : reportType === 'data-completeness' ? <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{report.summary.tripsWithoutMaxSpeed}</strong><span>Without max speed</span></div><div><strong>{report.summary.tripsWithoutRoute}</strong><span>Without route</span></div><div><strong>{report.summary.tripsWithoutTelemetry}</strong><span>Without telemetry</span></div><div><strong>{report.summary.sourceCount}</strong><span>Sources</span></div></div> : reportType === 'events' ? <div className="report-summary-cards"><div><strong>{report.summary.eventCount}</strong><span>Events</span></div><div><strong>{report.summary.eventTypes}</strong><span>Event types</span></div><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div></div> : reportType === 'utilization' ? <div className="report-summary-cards"><div><strong>{report.summary.activeDays}</strong><span>Active days</span></div><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Driving time</span></div></div> : reportType === 'speed-bands' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.routeVehicles}</strong><span>With routes</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Covered distance</span></div></div> : reportType === 'tracker-health' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.samples}</strong><span>Telemetry samples</span></div></div> : reportType === 'vehicle-health' ? <div className="report-summary-cards"><div><strong>{report.summary.vehicles}</strong><span>Vehicles</span></div><div><strong>{report.summary.samples}</strong><span>Telemetry samples</span></div></div> : reportType === 'business-mileage' ? <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Mileage</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Driving time</span></div><div><strong>{report.summary.uncategorizedCount}</strong><span>Uncategorized</span></div></div> : <div className="report-summary-cards"><div><strong>{report.summary.tripCount}</strong><span>Trips</span></div><div><strong>{distance(report.summary.distanceMeters, units)}</strong><span>Distance</span></div><div><strong>{minutes(report.summary.durationSeconds)}</strong><span>Duration</span></div><div><strong>{report.summary.averageTripDistanceMeters == null ? '—' : distance(report.summary.averageTripDistanceMeters, units)}</strong><span>Average trip</span></div><div><strong>{report.summary.averageTripDurationSeconds == null ? '—' : minutes(report.summary.averageTripDurationSeconds)}</strong><span>Average duration</span></div><div><strong>{report.summary.eventCount}</strong><span>Events</span></div><div><strong>{speed(report.summary.maxSpeedMph, units)}</strong><span>Max speed</span></div></div>}
+        {reportType === 'named-place-mileage' && report.summary.odometerByVehicle?.length > 0 && <div className="report-odometer-summary"><strong>Overall odometer</strong><div>{report.summary.odometerByVehicle.map((item) => <span key={item.vehicleId}>{item.vehicleName}: {odometer(item.startOdometerMeters, units)} → {odometer(item.endOdometerMeters, units)}</span>)}</div></div>}
         <div className="report-workspace-actions"><span>{report.rows.length ? `${report.rows.length} rows` : 'No records found for the selected filters.'}</span><div className="report-workspace-export-buttons"><span className="report-export-label">Export</span><button type="button" className="small secondary" onClick={exportJson} disabled={!report.rows.length} title="Download JSON">JSON</button><button type="button" className="small secondary" onClick={exportCsv} disabled={!report.rows.length} title="Download CSV">CSV</button><button type="button" className="small secondary" onClick={exportPdf} disabled={!report.rows.length} title="Print or save as PDF">PDF</button></div></div>
         <ReportTable reportType={reportType} rows={report.rows} units={units} groupBy={groupBy} />
       </>}

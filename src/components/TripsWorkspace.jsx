@@ -5,6 +5,6 @@ export default function TripsWorkspace({ children, onHeightChange, onHeightCommi
   const panelRef = useRef(null)
   return <section ref={panelRef} className="trips-workspace" aria-label="Trips">
     <div className="trips-workspace-scroll">{children}</div>
-    <PanelResizeHandle panelRef={panelRef} floating minHeight={240} onHeightChange={onHeightChange} onHeightCommit={onHeightCommit} />
+    <PanelResizeHandle panelRef={panelRef} floating minHeight={200} onHeightChange={onHeightChange} onHeightCommit={onHeightCommit} />
   </section>
 }

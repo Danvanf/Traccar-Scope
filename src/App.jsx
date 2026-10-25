@@ -110,9 +110,10 @@ const VEHICLE_STATUS_DEFAULT_TOP = 62
 const VEHICLE_STATUS_DEFAULT_RIGHT = 50
 const TRIPS_PANEL_DEFAULT_LEFT = 8
 const TRIPS_PANEL_DEFAULT_TOP = 150
-const TRIPS_PANEL_DEFAULT_HEIGHT = 422
-const FLOATING_PANEL_STACK_GAP = 15
-const NOTIFICATIONS_PANEL_DEFAULT_TOP = TRIPS_PANEL_DEFAULT_TOP + TRIPS_PANEL_DEFAULT_HEIGHT + FLOATING_PANEL_STACK_GAP
+const TRIPS_PANEL_DEFAULT_HEIGHT = 342
+const FLOATING_PANEL_STACK_GAP = 35
+const NOTIFICATIONS_PANEL_DEFAULT_ADJUSTMENT = -20
+const NOTIFICATIONS_PANEL_DEFAULT_TOP = TRIPS_PANEL_DEFAULT_TOP + TRIPS_PANEL_DEFAULT_HEIGHT + FLOATING_PANEL_STACK_GAP + NOTIFICATIONS_PANEL_DEFAULT_ADJUSTMENT
 const INITIAL_MAP_HISTORY_DAYS = 7
 const SHOW_EXPERIMENTAL_ASK = import.meta.env.DEV
   && new URLSearchParams(window.location.search).get('experimentalAsk') === 'true'
@@ -1941,13 +1942,19 @@ function App() {
       }
       if (storageName === 'notificationsPanelPosition'
         && Number(saved?.left) === TRIPS_PANEL_DEFAULT_LEFT
-        && Number(saved?.top) === 637) {
+        && [607, 637].includes(Number(saved?.top))) {
         saved = { ...saved, top: NOTIFICATIONS_PANEL_DEFAULT_TOP }
       }
       if (storageName === 'historyPanelPosition'
         && Number(saved?.left) === TRIPS_PANEL_DEFAULT_LEFT
         && Number(saved?.top) === 144) {
         saved = { ...saved, top: TRIPS_PANEL_DEFAULT_TOP }
+      }
+      if (storageName === 'historyPanelPosition'
+        && Number(saved?.left) === TRIPS_PANEL_DEFAULT_LEFT
+        && Number(saved?.top) === TRIPS_PANEL_DEFAULT_TOP
+        && Number(saved?.height) === 422) {
+        saved = { ...saved, height: TRIPS_PANEL_DEFAULT_HEIGHT }
       }
       const left = Number(saved?.left)
       const top = Number(saved?.top)
@@ -2298,9 +2305,9 @@ function App() {
     return matchingDevice?.id ?? devices[0]?.id ?? ''
   }, [devices, profileContextFor, selectedProfileId])
 
-  const openSelectedDaysGraph = useCallback((dayKey) => {
+  const openSelectedDaysGraph = useCallback((dayKey, tripSource = trips) => {
     const days = typeof dayKey === 'string' ? [dayKey] : (selectedDayKeys.length > 0 ? selectedDayKeys : (selectedDayKey ? [selectedDayKey] : []))
-    const groups = trips
+    const groups = tripSource
       .filter((trip) => dayKey === 'batch' ? isTripSelected(batchSelection, trip) : days.includes(trip.dayKey))
       .sort((a, b) => a.start - b.start)
        .map((trip) => ({ id: trip.savedTripId || trip.tripId, vehicleId: trip.vehicleId, deviceId: trip.deviceId, profileContext: profileContextFor({ vehicleId: trip.vehicleId, deviceId: trip.deviceId, at: trip.start }), label: `${trip.start.toLocaleTimeString()} – ${trip.end.toLocaleTimeString()}`, points: trip.points || [] }))
@@ -4257,42 +4264,72 @@ function App() {
   const graphProfile = graphGroups?.[0]
     ? (graphGroups[0].profileContext || profileContextFor({ vehicleId: graphGroups[0].vehicleId, deviceId: graphGroups[0].deviceId })).profile
     : null
-  const renderHistoryPanel = (floating = true, compact = false, onTripSelected = () => {}, compactHeaderActionsTarget = null) => <HistoryContent
-    daySummaries={daySummaries}
+  const renderHistoryPanel = (floating = true, compact = false, onTripSelected = () => {}, compactHeaderActionsTarget = null) => {
+    const selectedMobileDeviceId = Number(deviceListSelectedId)
+    const panelTrips = compact
+      ? trips.filter((trip) => Number.isFinite(selectedMobileDeviceId) && Number(trip.deviceId) === selectedMobileDeviceId)
+      : trips
+    const panelDaySummaries = compact
+      ? summarizeSavedTrips(panelTrips.map((trip) => ({
+        dayKey: trip.dayKey,
+        startedAt: trip.start,
+        distanceMeters: trip.distance,
+        durationSeconds: (trip.end - trip.start) / 1000,
+        maxSpeedMph: trip.maxSpeedMph,
+        eventCount: trip.eventCount,
+      })))
+      : daySummaries
+    return <HistoryContent
+    daySummaries={panelDaySummaries}
     loading={historyIndexLoading}
     error={historyIndexError}
     monthKeys={historyMonthKeys}
-    monthSummaryByKey={historyMonthSummaryByKey}
+    monthSummaryByKey={compact ? {} : historyMonthSummaryByKey}
     monthLoadState={historyMonthLoadState}
     selectedDayKey={selectedDayKey}
     selectedDayKeys={selectedDayKeys}
     setSelectedDayKey={selectDay}
     refreshHistory={applyTimeRange}
     loadMonth={loadHistoryMonth}
-    onReportDays={(selectionMode) => openSelectedDaysGraph(selectionMode || batchSelection.days.length > 0 || batchSelection.tripIds.length > 0 ? 'batch' : undefined)}
+    onReportDays={(selectionMode) => openSelectedDaysGraph(selectionMode || panelTrips.some((trip) => isTripSelected(batchSelection, trip)) ? 'batch' : undefined, panelTrips)}
     daySelectionState={(dayKey) => {
-      const dayTrips = trips.filter((trip) => trip.dayKey === dayKey)
+      const dayTrips = panelTrips.filter((trip) => trip.dayKey === dayKey)
       const count = dayTrips.filter((trip) => isTripSelected(batchSelection, trip)).length
       if (count > 0 && count < dayTrips.length) return 'mixed'
       return dayTrips.length > 0 ? count === dayTrips.length : batchSelection.days.includes(dayKey)
     }}
-    hasBatchSelection={trips.some((trip) => isTripSelected(batchSelection, trip))}
+    hasBatchSelection={panelTrips.some((trip) => isTripSelected(batchSelection, trip))}
     onToggleDay={(dayKey) => {
-      setBatchSelection((previous) => toggleDaySelection(previous, dayKey, trips))
+      setBatchSelection((previous) => toggleDaySelection(previous, dayKey, panelTrips))
       if (!selectedDayKeys.includes(dayKey) && selectedDayKey !== dayKey) selectDay(dayKey, { ctrlKey: true })
     }}
-    onReportDay={openSelectedDaysGraph}
-    canGraphDay={(dayKey) => trips.some((trip) => trip.dayKey === dayKey && trip.points?.length > 0)}
-    renderDayTrips={(dayKey, selectionMode) => renderDayTrips(dayKey, onTripSelected, selectionMode, compact)}
+    onReportDay={(dayKey) => openSelectedDaysGraph(dayKey, panelTrips)}
+    canGraphDay={(dayKey) => panelTrips.some((trip) => trip.dayKey === dayKey && trip.points?.length > 0)}
+    renderDayTrips={(dayKey, selectionMode) => <TripContent
+      selectionMode={selectionMode}
+      isTripSelected={(trip) => isTripSelected(batchSelection, trip)}
+      onToggleTrip={(trip) => setBatchSelection((previous) => toggleTripSelection(previous, trip))}
+      visibleTrips={panelTrips}
+      selectedDayKey={dayKey}
+      selectedDayKeys={[dayKey]}
+      devices={devices}
+      selectedTripId={selectedTripId}
+      focusTrip={(trip) => { onTripSelected(); focusTrip(trip) }}
+      displayUnits={settings.displayUnits}
+      tripEditor={null}
+      openTripGraph={openTripGraph}
+    />}
     displayUnits={settings.displayUnits}
     floating={floating}
     embedded={compact}
     compactHeaderActionsTarget={compactHeaderActionsTarget}
+    wideCompactList={floating && !compact}
     resizable={false}
     height={historyPanelPosition?.height}
     onHeightChange={(height) => setHistoryPanelPosition((current) => ({ ...current, height }))}
     onHeightCommit={(height) => persistMapKeyPosition('historyPanelPosition', 'history-panel-position', { ...historyPanelPosition, height }, setHistoryPanelPosition)}
   />
+  }
   const renderNotificationsPanel = (floating = true, embedded = false) => <NotificationsPanel
     notifications={notifications}
     selectedTripEvents={selectedTripEvents}
@@ -4336,23 +4373,6 @@ function App() {
     setNoteDraft={setTripNoteDraft}
     saveSelectedTripNote={saveSelectedTripNote}
   /> : null
-  const renderDayTrips = (dayKey, onTripSelected, selectionMode, compact = false) => <TripContent
-      selectionMode={selectionMode}
-      isTripSelected={(trip) => isTripSelected(batchSelection, trip)}
-      onToggleTrip={(trip) => setBatchSelection((previous) => toggleTripSelection(previous, trip))}
-      visibleTrips={trips}
-      selectedDayKey={dayKey}
-      selectedDayKeys={[dayKey]}
-      devices={devices}
-      selectedTripId={selectedTripId}
-      focusTrip={(trip) => {
-        onTripSelected()
-        focusTrip(trip)
-      }}
-      displayUnits={settings.displayUnits}
-      tripEditor={!compact && selectedTrip?.dayKey === dayKey ? tripEditorContent : null}
-      openTripGraph={openTripGraph}
-    />
   const renderTrips = ({ onTripSelected = () => {}, desktop = false, compactHeaderActionsTarget = null } = {}) => renderHistoryPanel(desktop, !desktop, onTripSelected, compactHeaderActionsTarget)
   const renderMobileStatus = () => <div className="scope-status-content">
     <StatusCard status={status} sessionState={sessionState} error={error} />
@@ -4508,6 +4528,7 @@ function App() {
         devices={renderMobileDevices}
         trips={renderTrips}
         tripEditor={tripEditorContent}
+        historyPanelPosition={historyPanelPosition}
         hasNotifications={notifications.length + selectedTripEvents.length > 0}
         onNotificationsClick={() => setActiveTask('notifications')}
         status={renderMobileStatus()}

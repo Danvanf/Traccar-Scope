@@ -38,6 +38,48 @@
 .scope-map-area[data-location-picker='true'],
 .scope-map-area[data-location-picker='true'] .leaflet-interactive { cursor: crosshair; }
 
+.scope-map-edit-trip-desktop {
+  position: fixed;
+  z-index: 1460;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 8px;
+  border: 2px solid var(--card-border);
+  border-radius: 9px;
+  background: transparent;
+  color: #000;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .25);
+}
+.scope-map-edit-trip-desktop svg { width: 22px; height: 22px; }
+
+.scope-trip-editor-backdrop {
+  position: fixed;
+  z-index: 1500;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .45);
+  overscroll-behavior: contain;
+}
+.scope-trip-editor-dialog {
+  width: min(440px, 100%);
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .38);
+}
+.scope-trip-editor-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.scope-trip-editor-dialog > header h2 { margin: 0; font-size: 16px; }
+.scope-trip-editor-dialog .trip-editor-dialog-content { margin: 0; padding: 0; border: 0; }
+
 .scope-desktop-content {
   position: absolute;
   z-index: 1;
@@ -203,30 +245,14 @@
   .scope-map-notifications svg { width: 22px; height: 22px; }
   .scope-map-edit-trip svg { width: 22px; height: 22px; }
   .scope-trip-editor-backdrop {
-    position: fixed;
-    z-index: 1500;
-    inset: 0;
-    display: flex;
     align-items: flex-end;
     justify-content: flex-start;
     padding: 12px 12px calc(68px + env(safe-area-inset-bottom, 0px));
-    background: rgba(0, 0, 0, .45);
-    overscroll-behavior: contain;
   }
   .scope-trip-editor-dialog {
     width: min(360px, 100%);
     max-height: min(70dvh, 520px);
-    overflow-y: auto;
-    padding: 14px;
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    background: var(--panel-bg);
-    color: var(--panel-text);
-    box-shadow: 0 12px 36px rgba(0, 0, 0, .38);
   }
-  .scope-trip-editor-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-  .scope-trip-editor-dialog > header h2 { margin: 0; font-size: 16px; }
-  .scope-trip-editor-dialog .trip-editor-dialog-content { margin: 0; padding: 0; border: 0; }
   .scope-map-area .leaflet-top.leaflet-right { top: 58px; }
   .scope-map-area .leaflet-control-zoom,
   .scope-map-area .map-action-control { display: none; }

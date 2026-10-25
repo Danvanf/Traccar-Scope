@@ -1377,6 +1377,22 @@ export async function fetchBusinessMileageReport(baseUrl, options = {}) {
   return format === 'csv' ? response.blob() : response.json()
 }
 
+export async function fetchNamedPlaceMileageReport(baseUrl, options = {}) {
+  const base = normalizeTraccarScopeApiBase(baseUrl)
+  const { from, to, vehicleId, tagId, placeIds = [], units = 'imperial' } = options
+  const params = new URLSearchParams()
+  if (from) params.set('from', new Date(from).toISOString())
+  if (to) { const end = /^\d{4}-\d{2}-\d{2}$/.test(to) ? `${to}T23:59:59.999` : to; params.set('to', new Date(end).toISOString()) }
+  if (vehicleId) params.set('vehicleId', vehicleId)
+  if (tagId) params.set('tagId', tagId)
+  for (const placeId of placeIds) params.append('placeIds', placeId)
+  if (units) params.set('units', units)
+  const url = `${base}/api/reports/named-place-mileage?${params}`
+  const response = await vehicleFetch(url)
+  if (!response.ok) throw await toResponseError(response, 'Traccar Scope API named-place mileage report failed', url)
+  return response.json()
+}
+
 export async function fetchSpeedBandReport(baseUrl, { from, to, vehicleId, tagId } = {}) {
   const base = normalizeTraccarScopeApiBase(baseUrl); const params = new URLSearchParams()
   if (from) params.set('from', new Date(from).toISOString())

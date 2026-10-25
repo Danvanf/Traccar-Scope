@@ -6,6 +6,13 @@ function eventLabel(value) {
   return String(value || 'event').replaceAll('_', ' ')
 }
 
+function formatNotificationMeasurement(event, displayUnits) {
+  if (event?.eventType === 'long_idle' && Number.isFinite(Number(event.measuredValue))) {
+    return `${(Number(event.measuredValue) / 60).toFixed(1)} min`
+  }
+  return formatEventMeasurement(event, displayUnits)
+}
+
 function NotificationsPanel({ notifications = [], selectedTripEvents = [], onSelectTripEvent, loading = false, error = '', onRetry, rangeLabel = 'Current selection', floating = false, embedded = false, displayUnits = 'imperial', onFloat, height, onHeightChange, onHeightCommit }) {
   const panelRef = useRef(null)
   const selectedEventIds = new Set(selectedTripEvents.map((event) => String(event.id)))
@@ -42,13 +49,14 @@ function NotificationsPanel({ notifications = [], selectedTripEvents = [], onSel
               <strong>Selected trip · Detected events</strong>
               {selectedTripEvents.map((event) => (
                 <button key={event.id} type="button" className="trip-event-link" onClick={() => onSelectTripEvent?.(event)}>
-                  {eventLabel(event.eventType)} · {event.source} · {new Date(event.occurredAt).toLocaleTimeString()}{event.measuredValue == null ? '' : ` · ${formatEventMeasurement(event, displayUnits)}`}
+                  {eventLabel(event.eventType)} · {event.source} · {new Date(event.occurredAt).toLocaleTimeString()}{event.measuredValue == null ? '' : ` · ${formatNotificationMeasurement(event, displayUnits)}`}
                 </button>
               ))}
             </div>
           )}
+          {selectedTripEvents.length > 0 && otherNotifications.length > 0 && <div className="notifications-section-divider" role="separator"><span>Selected Range</span></div>}
           {otherNotifications.slice(0, 80).map((notification) => {
-            const measurement = notification.measuredValue == null ? '' : ` · ${formatEventMeasurement(notification, displayUnits)}`
+            const measurement = notification.measuredValue == null ? '' : ` · ${formatNotificationMeasurement(notification, displayUnits)}`
             return (
               <div className="notification-item" key={notification.id}>
                 <div className="notification-main"><strong>{eventLabel(notification.eventType)}</strong><span className="notification-source">{notification.source}</span></div>

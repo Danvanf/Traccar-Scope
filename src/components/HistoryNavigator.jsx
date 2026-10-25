@@ -42,6 +42,7 @@ function HistoryNavigator({
   referenceRef,
   onFloat,
   compactHeaderActionsTarget = null,
+  wideCompactList = false,
   height,
   onHeightChange,
   onHeightCommit,
@@ -149,7 +150,7 @@ function HistoryNavigator({
   }, [effectiveMonthKeys, yearGroups])
 
   if (effectiveMonthKeys.length === 0) {
-    return <section ref={setPanelElement} style={panelStyle} className={`history-navigator${floating ? ' floating-history-content' : ''}`}>
+    return <section ref={setPanelElement} style={panelStyle} className={`history-navigator${floating ? ' floating-history-content' : ''}${wideCompactList ? ' wide-compact-list' : ''}`}>
       <div className={`history-navigator-header${floating ? ' floating-panel-handle' : ''}${compactHeaderActionsTarget ? ' compact-history-header' : ''}`}>
         {!compactHeaderActionsTarget && <h2>Recent days</h2>}
         <div className="panel-header-actions">
@@ -209,7 +210,7 @@ function HistoryNavigator({
   }
 
   return (
-    <section ref={setPanelElement} style={panelStyle} className={`history-navigator${floating ? ' floating-history-content' : ''}`}>
+    <section ref={setPanelElement} style={panelStyle} className={`history-navigator${floating ? ' floating-history-content' : ''}${wideCompactList ? ' wide-compact-list' : ''}`}>
       <div className={`history-navigator-header${floating ? ' floating-panel-handle' : ''}${compactHeaderActionsTarget ? ' compact-history-header' : ''}`}>
         {!compactHeaderActionsTarget && <h2>Recent days</h2>}
         {!compactHeaderActionsTarget && <div className="panel-header-actions"><button type="button" className="small secondary" onClick={refreshHistory} disabled={loading} title="Refresh history" aria-label="Refresh history">↻</button>{!floating && !embedded && <button type="button" className="small secondary" onClick={onFloat} title="Float Trips panel" aria-label="Float Trips">↗</button>}</div>}
