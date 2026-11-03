@@ -6,6 +6,8 @@ Before every production build, npm prints a reminder to export the current FMM00
 
 ## Currently bundled options
 
+Freematics ONE+ has an experimental telelogger v5 / Traccar `freematics` profile with 15 mappings. It has not been validated on hardware. See the [setup, source evidence, limitations, and sample submission workflow](../docs/FREEMATICS_ONE_PLUS_PROFILE.md).
+
 The FMM003 and FMM00A profiles are generated from a shared, scoped [Teltonika FMX003 dictionary](../device-field-catalog/teltonika/fmx003-mappings.json). Each contains 348 mappings: 296 raw AVL definitions and 52 decoded/derived keys, reviewed against the official model pages and Traccar v6.14.5. See the [complete 349-ID reference](../docs/TELTONIKA_FMM003_FMM00A_AVL_REFERENCE.md), [FMM003 catalog](../docs/TELTONIKA_FMM003_DATA_CATALOG.md), and [FMM00A catalog](../docs/TELTONIKA_FMM00A_DATA_CATALOG.md). A defined field is not a promise that every vehicle reports it. The optional FMB120, FMC003, FMC130 and Queclink GV300/GV55 profiles remain experimental; their mappings are not automatically promoted by this review.
 
 The FMM00A file retains the stable ID `teltonika-fmm003` because that is the ID already assigned to the live Silverado profile. Do not rename the ID without migrating saved vehicle assignments.

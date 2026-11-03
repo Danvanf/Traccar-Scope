@@ -7,6 +7,7 @@ import { findBundledAutomaticFieldMatch, findBundledFieldSuggestions } from '../
 import { hasDismissedSuggestions, isSuggestionDismissed, legacyTelemetryFieldScopeKey, telemetryFieldScopeKey } from '../lib/telemetryFieldScope'
 import { groupsMissingTelemetryAttributes, mergeFetchedTelemetryGroups, summarizeUnplottedTelemetryFields } from '../lib/telemetryGraphData.js'
 import TelemetryFieldEditor from './TelemetryFieldEditor'
+import TelemetryGraphLoading from './TelemetryGraphLoading'
 import { fetchTelemetrySourceMappings, fetchUserPreference, saveTelemetrySourceMapping, saveUserPreference } from '../lib/traccarScopeApi'
 import { appendSourceMappingRevision, createSourceMappingProfileResolver, sourceMappingUndoTarget } from '../lib/telemetrySourceMappings'
 
@@ -200,19 +201,47 @@ function displayScaleFor(values) {
   return 1
 }
 
-function TelemetryGraphViewer({ groups: initialGroups, profile = null, title = 'Telemetry Graph', onClose, publicMode = false, embedded = false, vehicleMetadata = null, deviceMetadata = null, deviceMetadataList = [], vehicleMetadataList = [], traccarServerVersion = '', fetchGpsPositions = null, namedPlaces = [], profileOptions = [], profileVehicleCounts = {}, userName = '', isAuthenticated = false, canEditSharedProfiles = false, traccarScopeApiBaseUrl = '', onSaveSharedMapping = null, onSourceMappingSaved = null, resolvePointProfileContext = null, registerEditorCloseAttempt = null }) {
+function TelemetryGraphViewer(props) {
+  const { groups: initialGroups, fetchGpsPositions } = props
   const [telemetryFetchState, setTelemetryFetchState] = useState(null)
+  const result = telemetryFetchState?.sourceGroups === initialGroups ? telemetryFetchState : null
+
+  useEffect(() => {
+    let active = true
+    let timer
+    // Paint the loading window before fetching or mounting the expensive graph.
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(async () => {
+        try {
+          const missingGroups = groupsMissingTelemetryAttributes(initialGroups)
+          const batches = fetchGpsPositions && missingGroups.length ? await fetchGpsPositions(missingGroups) : null
+          if (active) setTelemetryFetchState({
+            sourceGroups: initialGroups,
+            groups: batches ? mergeFetchedTelemetryGroups(initialGroups, batches) : initialGroups,
+            error: '',
+          })
+        } catch (error) {
+          if (active) setTelemetryFetchState({
+            sourceGroups: initialGroups,
+            groups: initialGroups,
+            error: error instanceof Error ? error.message : 'Unable to load full telemetry points.',
+          })
+        }
+      }, 0)
+    })
+    return () => { active = false; cancelAnimationFrame(frame); clearTimeout(timer) }
+  }, [fetchGpsPositions, initialGroups])
+
+  if (!result) return <TelemetryGraphLoading embedded={props.embedded} publicMode={props.publicMode} title={props.title} onClose={props.onClose} />
+  return <TelemetryGraphContent {...props} groups={result.groups} graphDataError={result.error} />
+}
+
+function TelemetryGraphContent({ groups: initialGroups, graphDataError = '', profile = null, title = 'Telemetry Graph', onClose, publicMode = false, embedded = false, vehicleMetadata = null, deviceMetadata = null, deviceMetadataList = [], vehicleMetadataList = [], traccarServerVersion = '', fetchGpsPositions = null, namedPlaces = [], profileOptions = [], profileVehicleCounts = {}, userName = '', isAuthenticated = false, canEditSharedProfiles = false, traccarScopeApiBaseUrl = '', onSaveSharedMapping = null, onSourceMappingSaved = null, resolvePointProfileContext = null, registerEditorCloseAttempt = null }) {
   const [sourceMappingState, setSourceMappingState] = useState({})
   const [sourceMappingLoadedKey, setSourceMappingLoadedKey] = useState('')
   const [automaticMappingStatus, setAutomaticMappingStatus] = useState('')
   const automaticMappingAttempts = useRef(new Set())
-  const hydrationResult = telemetryFetchState?.sourceGroups === initialGroups ? telemetryFetchState : null
-  const hydratedGroups = hydrationResult?.groups || null
-  const graphDataLoading = Boolean(fetchGpsPositions
-    && groupsMissingTelemetryAttributes(initialGroups).length > 0
-    && !hydrationResult)
-  const graphDataError = hydrationResult?.error || ''
-  const groups = hydratedGroups || initialGroups
+  const groups = initialGroups
 
   const sourceMappingDeviceIds = useMemo(() => [...new Set(initialGroups.map((group) => Number(group.deviceId)).filter((id) => Number.isInteger(id) && id > 0))].sort((a, b) => a - b), [initialGroups])
   const sourceMappingDeviceKey = sourceMappingDeviceIds.join(',')
@@ -234,24 +263,6 @@ function TelemetryGraphViewer({ groups: initialGroups, profile = null, title = '
       })
     return () => { active = false }
   }, [initialGroups, publicMode, sourceMappingDeviceIds, sourceMappingDeviceKey, traccarScopeApiBaseUrl])
-
-  useEffect(() => {
-    let active = true
-    const groupsNeedingTelemetry = groupsMissingTelemetryAttributes(initialGroups)
-    if (!fetchGpsPositions || groupsNeedingTelemetry.length === 0) return () => { active = false }
-    fetchGpsPositions(groupsNeedingTelemetry).then((batches) => {
-      if (!active) return
-      setTelemetryFetchState({ sourceGroups: initialGroups, groups: mergeFetchedTelemetryGroups(initialGroups, batches), error: '' })
-    }).catch((error) => {
-      if (active) setTelemetryFetchState({
-        sourceGroups: initialGroups,
-        groups: initialGroups,
-        error: error instanceof Error ? error.message : 'Unable to load full telemetry points.',
-      })
-    })
-
-    return () => { active = false }
-  }, [fetchGpsPositions, initialGroups])
 
   const points = useMemo(() => groups.flatMap((group, groupIndex) => group.points.map((value, pointIndex) => ({ ...asPoint(value), __groupIndex: groupIndex, __groupPointIndex: pointIndex }))).filter((point) => !Number.isNaN(point.timestamp?.getTime?.())).sort((a, b) => a.timestamp - b.timestamp), [groups])
   const sourceProfileResolvers = useMemo(() => groups.map((group) => {
@@ -453,7 +464,7 @@ function TelemetryGraphViewer({ groups: initialGroups, profile = null, title = '
     const isPercent = profilePoint
       ? profileForPoint(profilePoint)?.getAttributeHeader?.(key)?.includes('%')
       : false
-    const displayScale = autoScale ? (isPercent ? 1 : displayScaleFor(finite)) : 1
+    const displayScale = autoScale ? (isPercent ? 0.1 : displayScaleFor(finite)) : 1
     return { id, key, sourceKey, color: seriesColors[id] || defaultColorForKey(id), values, min: Math.min(...finite), max: Math.max(...finite), displayScale, displayMin: Math.min(...finite) * displayScale, displayMax: Math.max(...finite) * displayScale }
   }).filter(Boolean), [autoScale, groups, points, profile, selectedKeys, seriesColors, sourceMappingState])
   const profileForKey = (key, sourceKey = null) => {
@@ -661,7 +672,7 @@ function TelemetryGraphViewer({ groups: initialGroups, profile = null, title = '
     const keyProfile = point ? profileForPoint(point) : displayProfile
     const values = points.filter((candidate) => sourceKeyForGroup(groups[candidate.__groupIndex]) === sourceKey).map((candidate) => numericValue(candidate, fieldKey, profileForPoint(candidate))).filter(Number.isFinite)
     const isPercent = keyProfile?.getAttributeHeader?.(fieldKey)?.includes('%')
-    return [id, isPercent ? 1 : displayScaleFor(values)]
+    return [id, isPercent ? 0.1 : displayScaleFor(values)]
   })), [autoScale, availableKeys, displayProfile, groups, points, profile, sourceMappingState])
   const editingContext = editingFieldKey ? contextForKey(editingFieldKey, editingSourceKey) : null
   const editingSeriesId = editingFieldKey && editingSourceKey ? graphSeriesId(editingSourceKey, editingFieldKey) : editingFieldKey
@@ -951,8 +962,7 @@ function TelemetryGraphViewer({ groups: initialGroups, profile = null, title = '
     {manageOpen && <div className="telemetry-share-dialog telemetry-share-management"><h3>Shared links</h3><p>Enable restores the original URL if it has not expired. Rotate creates a replacement URL and invalidates the current one.</p>{shares.length === 0 ? <p>No links created yet.</p> : <>{['active', 'expired', 'revoked'].map((status) => { const matches = shares.filter((share) => share.status === status); if (matches.length === 0) return null; return <section key={status} className={status === 'revoked' ? 'telemetry-share-revoked' : undefined}><h4>{status === 'revoked' ? 'Revoked · deletion hold (30 days)' : status[0].toUpperCase() + status.slice(1)}</h4>{matches.map((share) => <div className="telemetry-share-row" key={share.shareId}><strong>{share.title || 'Telemetry graph'}</strong><span>{share.status} · expires {new Date(share.expiresAt).toLocaleString()} · {share.accessCount} visits</span><div>{share.status === 'active' && <button type="button" className="small secondary" onClick={() => copyShare(share)}>Copy link</button>}{share.status === 'active' && <button type="button" className="small secondary" onClick={() => rotateShare(share.shareId)} title="Create a replacement URL and invalidate the current one">Rotate</button>}{share.status === 'active' && <button type="button" className="small danger" onClick={() => revokeShare(share.shareId)}>Revoke</button>}{share.status === 'revoked' && <button type="button" className="small secondary" onClick={() => enableShare(share.shareId)}>Enable</button>}<button type="button" className="small secondary" onClick={() => setEditingExpiration({ shareId: share.shareId, value: localDateTimeValue(share.expiresAt) })}>Change expiration</button></div>{editingExpiration?.shareId === share.shareId && <div className="telemetry-share-expiration-editor"><label>Expires<input type="datetime-local" value={editingExpiration.value} min={localDateTimeValue(new Date(Date.now() + 6 * 60000))} max={localDateTimeValue(new Date(Date.now() + 90 * 86400000))} onChange={(event) => setEditingExpiration({ ...editingExpiration, value: event.target.value })} /></label><button type="button" className="small" onClick={() => updateShareExpiration(share.shareId)}>Save</button><button type="button" className="small secondary" onClick={() => setEditingExpiration(null)}>Cancel</button></div>}</div>)}</section> })}</>}<div className="telemetry-share-management-actions"><button type="button" className="small secondary" onClick={() => setManageOpen(false)}>Close</button></div></div>}
     {shareOpen && <div className="telemetry-share-dialog"><h3>Share this graph</h3><p>Shares the trips and telemetry currently loaded in this graph.</p><label>Title<input value={shareTitle} onChange={(event) => setShareTitle(event.target.value)} placeholder={title} /></label><label>Message<textarea value={shareMessage} onChange={(event) => setShareMessage(event.target.value)} rows="2" /></label><label>Expires<input type="datetime-local" value={shareExpiresAt} min={localDateTimeValue(new Date(Date.now() + 6 * 60000))} max={localDateTimeValue(new Date(Date.now() + 90 * 86400000))} onChange={(event) => setShareExpiresAt(event.target.value)} /></label><label className="telemetry-scale-switch"><span>Share all sensors</span><input type="checkbox" role="switch" checked={shareAllSensors} onChange={(event) => setShareAllSensors(event.target.checked)} /><i /></label><label className="telemetry-scale-switch"><span>Allow telemetry export</span><input type="checkbox" role="switch" checked={allowExport} onChange={(event) => setAllowExport(event.target.checked)} /><i /></label><div className="actions"><button type="button" onClick={createShare} disabled={(shareAllSensors ? availableKeys : selectedKeys).length === 0}>Create link</button><button type="button" className="secondary" onClick={() => setShareOpen(false)}>Close</button></div>{shareStatus && <p className="profile-editor-status">{shareStatus}</p>}</div>}
     <div className="telemetry-graph-card">
-      {(graphDataLoading || automaticMappingStatus || graphDataError || mixedProfiles || hasMissingProfileDefinition || hasUnassignedProfile || (shareStatus && !preparedExport)) && <div className="telemetry-graph-notices">
-        {graphDataLoading && <div className="telemetry-graph-status" role="status">Loading received telemetry for this graph…</div>}
+      {(automaticMappingStatus || graphDataError || mixedProfiles || hasMissingProfileDefinition || hasUnassignedProfile || (shareStatus && !preparedExport)) && <div className="telemetry-graph-notices">
         {automaticMappingStatus && <div className="telemetry-graph-status" role="status">{automaticMappingStatus}</div>}
         {graphDataError && <div className="telemetry-graph-status" role="status">Full telemetry could not be loaded. Showing the available trip points. {graphDataError}</div>}
         {mixedProfiles && <div className="telemetry-graph-status" role="status">Multiple profile assignments are present. Values are decoded per trip; legend labels use the first trip. Export and sharing are disabled for this selection.</div>}

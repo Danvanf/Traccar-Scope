@@ -1,0 +1,22 @@
+{
+  "id": "freematics-one-plus-experimental",
+  "name": "Freematics ONE+ (experimental; telelogger v5 / Traccar freematics)",
+  "schemaVersion": 16,
+  "attributeMap": {
+    "rpm": { "label": "Engine RPM", "sourceUnit": "rpm", "canonicalUnit": "rpm", "canonicalScale": 1, "units": "rpm", "quantity": "rotational_speed", "statusCardField": "engineRpm" },
+    "coolantTemp": { "label": "Engine Coolant Temperature", "sourceUnit": "°C", "canonicalUnit": "°C", "canonicalScale": 1, "units": "°C", "quantity": "engine_coolant_temperature", "statusCardField": "coolant" },
+    "obdSpeed": { "label": "OBD Speed", "sourceUnit": "km/h", "canonicalUnit": "km/h", "canonicalScale": 1, "units": "km/h", "quantity": "obd_speed", "statusCardField": "obdSpeed" },
+    "throttle": { "label": "Throttle Position", "sourceUnit": "%", "canonicalUnit": "%", "canonicalScale": 1, "units": "%", "quantity": "percentage", "statusCardField": "throttle" },
+    "engineLoad": { "label": "Calculated Engine Load", "sourceUnit": "%", "canonicalUnit": "%", "canonicalScale": 1, "units": "%", "quantity": "engine_load" },
+    "io266": { "label": "Fuel Pressure (OBD PID 0A)", "sourceUnit": "kPa", "canonicalUnit": "kPa", "canonicalScale": 1, "units": "kPa", "quantity": "fuel_pressure", "statusCardField": "fuelPressure" },
+    "io270": { "label": "Timing Advance (OBD PID 0E)", "sourceUnit": "°", "canonicalUnit": "°", "canonicalScale": 1, "units": "°", "quantity": "angle", "statusCardField": "timingAdvance" },
+    "io271": { "label": "Intake Air Temperature (OBD PID 0F)", "sourceUnit": "°C", "canonicalUnit": "°C", "canonicalScale": 1, "units": "°C", "quantity": "temperature", "statusCardField": "intakeAir" },
+    "battery": { "label": "OBD Supply Voltage", "sourceUnit": "V", "canonicalUnit": "V", "canonicalScale": 1, "units": "V", "quantity": "external_supply_voltage", "statusCardField": "power" },
+    "deviceTemp": { "label": "Device Temperature (Traccar decoded; verify firmware scale)", "sourceUnit": "°C", "canonicalUnit": "°C", "canonicalScale": 1, "units": "°C", "quantity": "temperature" },
+    "sat": { "label": "GNSS Satellite Count", "units": "count", "statusCardField": "satellites" },
+    "hdop": { "label": "GNSS HDOP (reported value; verify firmware scale)", "statusCardField": "hdop" },
+    "rssi": { "label": "Cellular Signal (reported CSQ/RSSI; modem dependent)", "statusCardField": "signalStrength" },
+    "acceleration": { "label": "Acceleration Vector (reported text; axes and units unverified)", "valueType": "text" },
+    "vin": { "label": "Vehicle VIN", "valueType": "identifier" }
+  }
+}

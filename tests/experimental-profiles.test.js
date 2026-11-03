@@ -7,6 +7,7 @@ import { DEFAULT_PROFILE_ID, PROFILE_DEFINITION_SCHEMA_VERSION, getAttributeMapV
 
 const profileDirectory = fileURLToPath(new URL('../device-profiles/', import.meta.url))
 const candidateFiles = [
+  'freematics-one-plus.experimental.json',
   'teltonika-fmb120.experimental.json',
   'teltonika-fmc003.experimental.json',
   'teltonika-fmc130.experimental.json',

@@ -69,6 +69,26 @@ body {
 .telemetry-scale-note { position: absolute; top: 8px; left: 24px; z-index: 2; font-size: .8rem; opacity: .8; }
 .telemetry-scale-note { display: none; }
 
+.telemetry-graph-loading {
+  box-sizing: border-box;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px 20px;
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 12px;
+  background: var(--panel-bg, #13213d);
+  color: var(--panel-text, #fff);
+  text-align: center;
+}
+.telemetry-graph-loading p { margin: 0; font-size: 13px; }
+.telemetry-graph-loading-spinner { width: 28px; height: 28px; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: telemetry-loading-spin .8s linear infinite; }
+@keyframes telemetry-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .telemetry-graph-loading-spinner { animation: none; } }
+
 .telemetry-graph-card {
   position: relative;
   width: min(1120px, 100%);
